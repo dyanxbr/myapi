@@ -22,14 +22,14 @@ foreach ($requiredFields as $field) {
     }
 }
 
-// Conexión a la base de datos
 $conn = new mysqli(
-    getenv('MYSQL_HOST_ADDON'),
-    getenv('MYSQL_USER_ADDON'),
-    getenv('MYSQL_PASSWORD_ADDON'),
-    getenv('MYSQL_DATABASE_ADDON'),
-    getenv('MYSQL_PORT_ADDON')
+    "bulcba0sxwx5qfwkuzwq-mysql.services.clever-cloud.com", // HOST
+    "uxwzyzmfaiubuud6",                                     // USUARIO
+    "ZT624d8ccGvY5OCZ9cJm",                                 // CONTRASEÑA
+    "bulcba0sxwx5qfwkuzwq",                                 // BASE DE DATOS
+    3306                                                    // PUERTO
 );
+
 
 if ($conn->connect_error) {
     http_response_code(500);
