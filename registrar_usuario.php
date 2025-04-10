@@ -1,94 +1,88 @@
 <?php
+require 'db.php';
+
+// Encabezados CORS y JSON
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST");
 header("Access-Control-Max-Age: 3600");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
-include 'db.php';
+// Obtener y validar JSON
+$input = file_get_contents("php://input");
+$data = json_decode($input, true);
 
-$data = json_decode(file_get_contents("php://input"), true);
+if (json_last_error() !== JSON_ERROR_NONE) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "JSON inválido",
+        "error_details" => json_last_error_msg()
+    ]);
+    exit;
+}
 
-// Validación de campos obligatorios
-$requiredFields = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'usuario', 'password'];
-foreach ($requiredFields as $field) {
-    if (empty($data[$field])) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "message" => "El campo $field es requerido"
-        ]);
-        exit;
+// Validar campos obligatorios
+$required = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'usuario', 'password'];
+$missing = array_diff($required, array_keys($data));
+
+if (!empty($missing)) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "Campos requeridos faltantes: " . implode(', ', $missing)
+    ]);
+    exit;
+}
+
+// Procesar datos
+try {
+    // Validar longitud de usuario
+    if (strlen($data['usuario']) > 20) {
+        throw new Exception("El usuario no puede exceder 20 caracteres");
     }
-}
 
-$conn = new mysqli(
-    "bulcba0sxwx5qfwkuzwq-mysql.services.clever-cloud.com", // HOST
-    "uxwzyzmfaiubuud6",                                     // USUARIO
-    "ZT624d8ccGvY5OCZ9cJm",                                 // CONTRASEÑA
-    "bulcba0sxwx5qfwkuzwq",                                 // BASE DE DATOS
-    3306                                                    // PUERTO
-);
+    // Preparar statement seguro
+    $stmt = $conn->prepare("INSERT INTO usuarios (nombre, apellido_paterno, apellido_materno, usuario, password) VALUES (?, ?, ?, ?, ?)");
+    
+    if (!$stmt) {
+        throw new Exception("Error al preparar consulta: " . $conn->error);
+    }
 
+    // Hash de contraseña
+    $passwordHash = password_hash($data['password'], PASSWORD_BCRYPT);
+    
+    // Vincular parámetros
+    $stmt->bind_param("sssss", 
+        $data['nombre'],
+        $data['apellidoPaterno'],
+        $data['apellidoMaterno'],
+        $data['usuario'],
+        $passwordHash
+    );
 
-if ($conn->connect_error) {
+    // Ejecutar consulta
+    if ($stmt->execute()) {
+        // Éxito
+        echo json_encode([
+            "success" => true,
+            "message" => "Usuario registrado exitosamente",
+            "user_id" => $stmt->insert_id
+        ]);
+    } else {
+        throw new Exception("Error al ejecutar consulta: " . $stmt->error);
+    }
+    
+} catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
         "success" => false,
-        "message" => "Error de conexión a la base de datos: " . $conn->connect_error
+        "message" => "Error en el servidor",
+        "error_details" => $e->getMessage(),
+        "received_data" => $data // Para debugging
     ]);
-    exit;
-}
-
-// Escapar y preparar datos
-$nombre = $conn->real_escape_string($data['nombre']);
-$apellidoP = $conn->real_escape_string($data['apellidoPaterno']);
-$apellidoM = $conn->real_escape_string($data['apellidoMaterno']);
-$usuario = $conn->real_escape_string($data['usuario']);
-$password = password_hash($conn->real_escape_string($data['password']), PASSWORD_BCRYPT);
-
-// Verificar si el usuario ya existe
-$sqlCheck = "SELECT id FROM usuarios WHERE usuario = ?";
-$stmtCheck = $conn->prepare($sqlCheck);
-$stmtCheck->bind_param("s", $usuario);
-$stmtCheck->execute();
-$stmtCheck->store_result();
-
-if ($stmtCheck->num_rows > 0) {
-    http_response_code(409);
-    echo json_encode([
-        "success" => false,
-        "message" => "El nombre de usuario ya está en uso"
-    ]);
-    $stmtCheck->close();
+} finally {
+    if (isset($stmt)) $stmt->close();
     $conn->close();
-    exit;
 }
-$stmtCheck->close();
-
-// Insertar en la base de datos (usando prepared statements)
-$sql = "INSERT INTO usuarios (nombre, apellido_paterno, apellido_materno, usuario, password) VALUES (?, ?, ?, ?, ?)";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("sssss", $nombre, $apellidoP, $apellidoM, $usuario, $password);
-
-if ($stmt->execute()) {
-    $newId = $stmt->insert_id;
-    echo json_encode([
-        "success" => true,
-        "message" => "Usuario registrado exitosamente",
-        "data" => [
-            "id" => $newId,
-            "usuario" => $usuario
-        ]
-    ]);
-} else {
-    http_response_code(500);
-    echo json_encode([
-        "success" => false,
-        "message" => "Error al registrar usuario: " . $stmt->error
-    ]);
-}
-
-$stmt->close();
-$conn->close();
 ?>
