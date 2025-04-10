@@ -64,10 +64,13 @@ try {
     // Ejecutar consulta
     if ($stmt->execute()) {
         // Éxito
-        echo json_encode([
-            "success" => true,
-            "message" => "Usuario registrado exitosamente",
-            "user_id" => $stmt->insert_id
+       echo json_encode([
+        "success" => true,
+        "message" => "Usuario registrado exitosamente",
+        "data" => [
+        "id" => $stmt->insert_id,  // Asegúrate que sea "id" y no "user_id"
+        "usuario" => $data['usuario']
+            ]
         ]);
     } else {
         throw new Exception("Error al ejecutar consulta: " . $stmt->error);
