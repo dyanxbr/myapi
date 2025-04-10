@@ -1,36 +1,49 @@
 <?php
 include 'db.php';
 
-// Obtener datos del cuerpo de la petición
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Max-Age: 3600");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+
 $data = json_decode(file_get_contents("php://input"), true);
 
-// Validar datos recibidos
-if (
-    !isset($data['nombre']) || 
-    !isset($data['apellidoPaterno']) || 
-    !isset($data['apellidoMaterno']) ||
-    !isset($data['usuario']) ||
-    !isset($data['password'])
-) {
+// Validación de datos requeridos
+$requiredFields = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'usuario', 'password'];
+foreach ($requiredFields as $field) {
+    if (empty($data[$field])) {
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "message" => "El campo $field es requerido"
+        ]);
+        exit;
+    }
+}
+
+// Escapar y preparar datos
+$nombre = $conn->real_escape_string(trim($data['nombre']));
+$apellidoP = $conn->real_escape_string(trim($data['apellidoPaterno']));
+$apellidoM = $conn->real_escape_string(trim($data['apellidoMaterno']));
+$usuario = $conn->real_escape_string(trim($data['usuario']));
+$password = password_hash($conn->real_escape_string($data['password']), PASSWORD_BCRYPT);
+
+// Validar longitud máxima según tu tabla
+if (strlen($usuario) > 20) {
     http_response_code(400);
     echo json_encode([
         "success" => false,
-        "message" => "Datos incompletos"
+        "message" => "El usuario no puede exceder 20 caracteres"
     ]);
     exit;
 }
 
-$nombre = $conn->real_escape_string($data['nombre']);
-$apellidoPaterno = $conn->real_escape_string($data['apellidoPaterno']);
-$apellidoMaterno = $conn->real_escape_string($data['apellidoMaterno']);
-$usuario = $conn->real_escape_string($data['usuario']);
-$password = $conn->real_escape_string($data['password']);
-
 // Verificar si el usuario ya existe
 $sqlCheck = "SELECT id FROM usuarios WHERE usuario = '$usuario'";
-$resultCheck = $conn->query($sqlCheck);
+$result = $conn->query($sqlCheck);
 
-if ($resultCheck->num_rows > 0) {
+if ($result->num_rows > 0) {
     http_response_code(409);
     echo json_encode([
         "success" => false,
@@ -39,7 +52,7 @@ if ($resultCheck->num_rows > 0) {
     exit;
 }
 
-// Insertar nuevo usuario
+// Insertar en la base de datos
 $sql = "INSERT INTO usuarios (
     nombre, 
     apellido_paterno, 
@@ -48,30 +61,32 @@ $sql = "INSERT INTO usuarios (
     password
 ) VALUES (
     '$nombre', 
-    '$apellidoPaterno', 
-    '$apellidoMaterno', 
+    '$apellidoP', 
+    '$apellidoM', 
     '$usuario', 
     '$password'
 )";
 
-if ($conn->query($sql) === TRUE) {
-    $usuarioId = $conn->insert_id;
-    
-    // Obtener el usuario recién creado
-    $sqlUsuario = "SELECT * FROM usuarios WHERE id = $usuarioId";
-    $resultUsuario = $conn->query($sqlUsuario);
-    $usuarioRegistrado = $resultUsuario->fetch_assoc();
+if ($conn->query($sql)) {
+    // Obtener el ID del nuevo registro
+    $newId = $conn->insert_id;
     
     echo json_encode([
         "success" => true,
         "message" => "Usuario registrado exitosamente",
-        "usuario" => $usuarioRegistrado
+        "data" => [
+            "id" => $newId,
+            "usuario" => $usuario,
+            "nombre_completo" => "$nombre $apellidoP $apellidoM",
+            "fecha_registro" => date('Y-m-d H:i:s')
+        ]
     ]);
 } else {
     http_response_code(500);
     echo json_encode([
         "success" => false,
-        "message" => "Error al registrar usuario: " . $conn->error
+        "message" => "Error al registrar usuario",
+        "error" => $conn->error
     ]);
 }
 
